@@ -13,6 +13,8 @@ function Invoke-CIPPStandardSharePointMassDeletionAlert {
         CAT
             Defender Standards
         TAG
+        EXECUTIVETEXT
+            Alerts administrators when employees delete large numbers of SharePoint files in a short time period, helping detect potential data destruction attacks, ransomware, or accidental mass deletions. This early warning system enables rapid response to protect critical business documents and data.
         ADDEDCOMPONENT
             {"type":"number","name":"standards.SharePointMassDeletionAlert.Threshold","label":"Max files to delete within the time frame","defaultValue":20}
             {"type":"number","name":"standards.SharePointMassDeletionAlert.TimeWindow","label":"Time frame in minutes","defaultValue":60}
@@ -40,9 +42,16 @@ function Invoke-CIPPStandardSharePointMassDeletionAlert {
 
     $PolicyName = 'CIPP SharePoint mass deletion of files by a user'
 
-    $CurrentState = New-ExoRequest -TenantId $Tenant -cmdlet 'Get-ProtectionAlert' -Compliance |
-    Where-Object { $_.Name -eq $PolicyName } |
-    Select-Object -Property *
+    try {
+        $CurrentState = New-ExoRequest -TenantId $Tenant -cmdlet 'Get-ProtectionAlert' -Compliance |
+        Where-Object { $_.Name -eq $PolicyName } |
+        Select-Object -Property *
+    }
+    catch {
+        $ErrorMessage = Get-NormalizedError -Message $_.Exception.Message
+        Write-LogMessage -API 'Standards' -Tenant $Tenant -Message "Could not get the sharingCapability state for $Tenant. Error: $ErrorMessage" -Sev Error
+        return
+    }
 
     $EmailsOutsideSettings = $CurrentState.NotifyUser | Where-Object { $_ -notin $Settings.NotifyUser.value }
     $MissingEmailsInSettings = $Settings.NotifyUser.value | Where-Object { $_ -notin $CurrentState.NotifyUser }

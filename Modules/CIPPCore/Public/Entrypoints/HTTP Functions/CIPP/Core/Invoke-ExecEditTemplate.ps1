@@ -1,5 +1,3 @@
-using namespace System.Net
-
 function Invoke-ExecEditTemplate {
     <#
     .FUNCTIONALITY
@@ -11,12 +9,9 @@ function Invoke-ExecEditTemplate {
     param($Request, $TriggerMetadata)
 
     $APIName = $Request.Params.CIPPEndpoint
-    $Headers = $Request.Headers
-    Write-LogMessage -headers $Headers -API $APIName -message 'Accessed this API' -Sev 'Debug'
-
     try {
         $Table = Get-CippTable -tablename 'templates'
-        $guid = $request.body.id
+        $guid = $request.body.id ? $request.body.id : $request.body.GUID
         $JSON = ConvertTo-Json -Compress -Depth 100 -InputObject ($request.body | Select-Object * -ExcludeProperty GUID)
         $Type = $request.query.Type
 
@@ -44,8 +39,7 @@ function Invoke-ExecEditTemplate {
     }
 
 
-    # Associate values to output bindings by calling 'Push-OutputBinding'.
-    Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
+    return ([HttpResponseContext]@{
             StatusCode = [HttpStatusCode]::OK
             Body       = $body
         })

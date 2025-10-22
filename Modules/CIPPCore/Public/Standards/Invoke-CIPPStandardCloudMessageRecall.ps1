@@ -13,6 +13,8 @@ function Invoke-CIPPStandardCloudMessageRecall {
         CAT
             Exchange Standards
         TAG
+        EXECUTIVETEXT
+            Enables employees to recall or retract emails they've sent, helping prevent embarrassing mistakes or accidental data sharing. This feature can reduce the impact of human errors in email communication and provides a safety net for sensitive information accidentally sent to wrong recipients.
         ADDEDCOMPONENT
             {"type":"autoComplete","multiple":false,"label":"Select value","name":"standards.CloudMessageRecall.state","options":[{"label":"Enabled","value":"true"},{"label":"Disabled","value":"false"}]}
         IMPACT
@@ -29,7 +31,7 @@ function Invoke-CIPPStandardCloudMessageRecall {
     #>
 
     param($Tenant, $Settings)
-    $TestResult = Test-CIPPStandardLicense -StandardName 'CloudMessageRecall' -TenantFilter $Tenant -RequiredCapabilities @('EXCHANGE_S_STANDARD', 'EXCHANGE_S_ENTERPRISE', 'EXCHANGE_LITE') #No Foundation because that does not allow powershell access
+    $TestResult = Test-CIPPStandardLicense -StandardName 'CloudMessageRecall' -TenantFilter $Tenant -RequiredCapabilities @('EXCHANGE_S_STANDARD', 'EXCHANGE_S_ENTERPRISE', 'EXCHANGE_S_STANDARD_GOV', 'EXCHANGE_S_ENTERPRISE_GOV', 'EXCHANGE_LITE') #No Foundation because that does not allow powershell access
 
     if ($TestResult -eq $false) {
         Write-Host "We're exiting as the correct license is not present for this standard."
@@ -38,9 +40,16 @@ function Invoke-CIPPStandardCloudMessageRecall {
     ##$Rerun -Type Standard -Tenant $Tenant -Settings $Settings 'CloudMessageRecall'
 
     # Get state value using null-coalescing operator
-    $state = $Settings.state.value
+    $state = $Settings.state.value ?? $Settings.state
 
-    $CurrentState = (New-ExoRequest -tenantid $Tenant -cmdlet 'Get-OrganizationConfig').MessageRecallEnabled
+    try {
+        $CurrentState = (New-ExoRequest -tenantid $Tenant -cmdlet 'Get-OrganizationConfig').MessageRecallEnabled
+    }
+    catch {
+        $ErrorMessage = Get-NormalizedError -Message $_.Exception.Message
+        Write-LogMessage -API 'Standards' -Tenant $Tenant -Message "Could not get the CloudMessageRecall state for $Tenant. Error: $ErrorMessage" -Sev Error
+        return
+    }
     $WantedState = if ($state -eq 'true') { $true } else { $false }
     $StateIsCorrect = if ($CurrentState -eq $WantedState) { $true } else { $false }
 
@@ -53,7 +62,7 @@ function Invoke-CIPPStandardCloudMessageRecall {
 
     # Input validation
     if (([string]::IsNullOrWhiteSpace($state) -or $state -eq 'Select a value') -and ($Settings.remediate -eq $true -or $Settings.alert -eq $true)) {
-        Write-LogMessage -API 'Standards' -tenant $Tenant -message 'MessageRecallEnabled: Invalid state parameter set' -sev Error
+        Write-LogMessage -API 'Standards' -tenant $Tenant -message 'CloudMessageRecall: Invalid state parameter set' -sev Error
         return
     }
 

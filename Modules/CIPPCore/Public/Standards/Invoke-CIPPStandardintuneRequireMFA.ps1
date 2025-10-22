@@ -13,6 +13,8 @@ function Invoke-CIPPStandardintuneRequireMFA {
         CAT
             Intune Standards
         TAG
+        EXECUTIVETEXT
+            Requires employees to use multi-factor authentication when registering devices for corporate access, adding an extra security layer to prevent unauthorized device enrollment. This helps ensure only legitimate users can connect their devices to company systems.
         IMPACT
             Medium Impact
         ADDEDDATE
@@ -35,7 +37,14 @@ function Invoke-CIPPStandardintuneRequireMFA {
         return $true
     } #we're done.
 
-    $PreviousSetting = New-GraphGetRequest -uri 'https://graph.microsoft.com/beta/policies/deviceRegistrationPolicy' -tenantid $Tenant
+    try {
+        $PreviousSetting = New-GraphGetRequest -uri 'https://graph.microsoft.com/beta/policies/deviceRegistrationPolicy' -tenantid $Tenant
+    }
+    catch {
+        $ErrorMessage = Get-NormalizedError -Message $_.Exception.Message
+        Write-LogMessage -API 'Standards' -Tenant $Tenant -Message "Could not get the intuneRequireMFA state for $Tenant. Error: $ErrorMessage" -Sev Error
+        return
+    }
 
     If ($Settings.remediate -eq $true) {
         if ($PreviousSetting.multiFactorAuthConfiguration -eq 'required') {

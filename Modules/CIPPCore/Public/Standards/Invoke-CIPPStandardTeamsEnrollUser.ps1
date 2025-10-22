@@ -13,6 +13,8 @@ function Invoke-CIPPStandardTeamsEnrollUser {
         CAT
             Teams Standards
         TAG
+        EXECUTIVETEXT
+            Determines whether employees can enroll their voice and face profiles for recognition features in Teams, enabling personalized experiences like voice identification. This setting balances convenience features with privacy considerations and organizational policies regarding biometric data collection.
         ADDEDCOMPONENT
             {"type":"autoComplete","required":true,"multiple":false,"creatable":false,"name":"standards.TeamsEnrollUser.EnrollUserOverride","label":"Voice and Face Enrollment","options":[{"label":"Disabled","value":"Disabled"},{"label":"Enabled","value":"Enabled"}]}
         IMPACT
@@ -39,7 +41,15 @@ function Invoke-CIPPStandardTeamsEnrollUser {
     } #we're done.
     $enrollUserOverride = $Settings.EnrollUserOverride.value ?? $Settings.EnrollUserOverride
 
-    $CurrentState = New-TeamsRequest -TenantFilter $Tenant -Cmdlet 'Get-CsTeamsMeetingPolicy' -cmdParams @{Identity = 'Global' } | Select-Object EnrollUserOverride
+    try {
+        $CurrentState = New-TeamsRequest -TenantFilter $Tenant -Cmdlet 'Get-CsTeamsMeetingPolicy' -cmdParams @{Identity = 'Global' } |
+        Select-Object EnrollUserOverride
+    }
+    catch {
+        $ErrorMessage = Get-NormalizedError -Message $_.Exception.Message
+        Write-LogMessage -API 'Standards' -Tenant $Tenant -Message "Could not get the TeamsEnrollUser state for $Tenant. Error: $ErrorMessage" -Sev Error
+        return
+    }
 
     $StateIsCorrect = ($CurrentState.EnrollUserOverride -eq $enrollUserOverride)
 

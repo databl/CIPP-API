@@ -13,6 +13,8 @@ function Invoke-CIPPStandardAppDeploy {
         CAT
             Entra (AAD) Standards
         TAG
+        EXECUTIVETEXT
+            Automatically deploys approved business applications across all company locations and users, ensuring consistent access to essential tools and maintaining standardized software configurations. This streamlines application management and reduces IT deployment overhead.
         ADDEDCOMPONENT
             {"type":"select","multiple":false,"creatable":false,"label":"App Approval Mode","name":"standards.AppDeploy.mode","options":[{"label":"Template","value":"template"},{"label":"Copy Permissions","value":"copy"}]}
             {"type":"autoComplete","multiple":true,"creatable":false,"label":"Select Applications","name":"standards.AppDeploy.templateIds","api":{"url":"/api/ListAppApprovalTemplates","labelField":"TemplateName","valueField":"TemplateId","queryKey":"StdAppApprovalTemplateList","addedField":{"AppId":"AppId"}},"condition":{"field":"standards.AppDeploy.mode","compareType":"is","compareValue":"template"}}
@@ -186,6 +188,27 @@ function Invoke-CIPPStandardAppDeploy {
                         $ExistingApp = $AppExists | Where-Object { $_.displayName -eq $TemplateData.AppName }
                         if ($ExistingApp) {
                             Write-LogMessage -API 'Standards' -tenant $tenant -message "Application with name '$($TemplateData.AppName)' already exists in tenant $Tenant" -sev Info
+
+                            # get existing application
+                            $App = New-GraphGetRequest -uri "https://graph.microsoft.com/beta/applications(appId='$($ExistingApp.appId)')" -tenantid $Tenant
+
+                            # compare permissions
+                            $ExistingPermissions = $App.requiredResourceAccess | ConvertTo-Json -Depth 10
+                            $NewPermissions = $ApplicationManifest.requiredResourceAccess | ConvertTo-Json -Depth 10
+                            if ($ExistingPermissions -ne $NewPermissions) {
+                                Write-LogMessage -API 'Standards' -tenant $tenant -message "Updating permissions for existing application '$($TemplateData.AppName)' in tenant $Tenant" -sev Info
+
+                                # Update permissions for existing application
+                                $UpdateBody = @{
+                                    requiredResourceAccess = $ApplicationManifest.requiredResourceAccess
+                                } | ConvertTo-Json -Depth 10
+                                $null = New-GraphPostRequest -type PATCH -uri "https://graph.microsoft.com/beta/applications(appId='$($ExistingApp.appId)')" -tenantid $Tenant -body $UpdateBody
+
+                                # consent new permissions
+                                Add-CIPPDelegatedPermission -RequiredResourceAccess $ApplicationManifest.requiredResourceAccess -ApplicationId $ExistingApp.appId -Tenantfilter $Tenant
+                                Add-CIPPApplicationPermission -RequiredResourceAccess $ApplicationManifest.requiredResourceAccess -ApplicationId $ExistingApp.appId -Tenantfilter $Tenant
+                            }
+
                             continue
                         }
 

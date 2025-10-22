@@ -13,6 +13,9 @@ function Invoke-CIPPStandardTeamsExternalFileSharing {
         CAT
             Teams Standards
         TAG
+            "CIS M365 5.0 (8.4.1)"
+        EXECUTIVETEXT
+            Controls which external cloud storage services (like Google Drive, Dropbox, Box) employees can access through Teams, ensuring file sharing occurs only through approved and secure platforms. This helps maintain data governance while supporting necessary business integrations.
         ADDEDCOMPONENT
             {"type":"switch","name":"standards.TeamsExternalFileSharing.AllowGoogleDrive","label":"Allow Google Drive"}
             {"type":"switch","name":"standards.TeamsExternalFileSharing.AllowShareFile","label":"Allow ShareFile"}
@@ -41,8 +44,16 @@ function Invoke-CIPPStandardTeamsExternalFileSharing {
         Write-Host "We're exiting as the correct license is not present for this standard."
         return $true
     } #we're done.
-    Write-Host "TeamsExternalFileSharing: $($Settings | ConvertTo-Json)"
-    $CurrentState = New-TeamsRequest -TenantFilter $Tenant -Cmdlet 'Get-CsTeamsClientConfiguration' | Select-Object AllowGoogleDrive, AllowShareFile, AllowBox, AllowDropBox, AllowEgnyte
+
+    try {
+        $CurrentState = New-TeamsRequest -TenantFilter $Tenant -Cmdlet 'Get-CsTeamsClientConfiguration' |
+        Select-Object AllowGoogleDrive, AllowShareFile, AllowBox, AllowDropBox, AllowEgnyte
+    }
+    catch {
+        $ErrorMessage = Get-NormalizedError -Message $_.Exception.Message
+        Write-LogMessage -API 'Standards' -Tenant $Tenant -Message "Could not get the TeamsExternalFileSharing state for $Tenant. Error: $ErrorMessage" -Sev Error
+        return
+    }
 
     $StateIsCorrect = ($CurrentState.AllowGoogleDrive -eq $Settings.AllowGoogleDrive ?? $false ) -and
     ($CurrentState.AllowShareFile -eq $Settings.AllowShareFile ?? $false ) -and

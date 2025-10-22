@@ -13,6 +13,8 @@ function Invoke-CIPPStandardTeamsGuestAccess {
         CAT
             Teams Standards
         TAG
+        EXECUTIVETEXT
+            Determines whether external partners, vendors, and collaborators can be invited to participate in Teams conversations and meetings. This fundamental setting enables external collaboration while requiring careful management to balance openness with security and information protection.
         ADDEDCOMPONENT
             {"type":"switch","name":"standards.TeamsGuestAccess.AllowGuestUser","label":"Allow guest users"}
         IMPACT
@@ -36,11 +38,19 @@ function Invoke-CIPPStandardTeamsGuestAccess {
         return $true
     } #we're done.
 
-    $CurrentState = New-TeamsRequest -TenantFilter $Tenant -Cmdlet 'Get-CsTeamsClientConfiguration' -CmdParams @{Identity = 'Global' } | Select-Object AllowGuestUser
+    try {
+        $CurrentState = New-TeamsRequest -TenantFilter $Tenant -Cmdlet 'Get-CsTeamsClientConfiguration' -CmdParams @{Identity = 'Global' } |
+        Select-Object AllowGuestUser
+    }
+    catch {
+        $ErrorMessage = Get-NormalizedError -Message $_.Exception.Message
+        Write-LogMessage -API 'Standards' -Tenant $Tenant -Message "Could not get the TeamsGuestAccess state for $Tenant. Error: $ErrorMessage" -Sev Error
+        return
+    }
 
-    if ($null -eq $Settings.AllowGuestUser) { $Settings.AllowGuestUser = $false }
+    $AllowGuestUser = $Settings.AllowGuestUser ?? $false
 
-    $StateIsCorrect = ($CurrentState.AllowGuestUser -eq $Settings.AllowGuestUser)
+    $StateIsCorrect = ($CurrentState.AllowGuestUser -eq $AllowGuestUser)
 
     if ($Settings.remediate -eq $true) {
         if ($StateIsCorrect -eq $true) {
@@ -48,7 +58,7 @@ function Invoke-CIPPStandardTeamsGuestAccess {
         } else {
             $cmdParams = @{
                 Identity       = 'Global'
-                AllowGuestUser = $Settings.AllowGuestUser
+                AllowGuestUser = $AllowGuestUser
             }
 
             try {

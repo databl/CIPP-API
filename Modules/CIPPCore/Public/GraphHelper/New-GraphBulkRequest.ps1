@@ -17,6 +17,10 @@ function New-GraphBulkRequest {
     if ($NoAuthCheck -or (Get-AuthorisedRequest -Uri $uri -TenantID $tenantid)) {
         $headers = Get-GraphToken -tenantid $tenantid -scope $scope -AsApp $asapp
 
+        if ($script:XMsThrottlePriority) {
+            $headers['x-ms-throttle-priority'] = $script:XMsThrottlePriority
+        }
+
         $URL = "https://graph.microsoft.com/$Version/`$batch"
 
         # Track consecutive Graph API failures
@@ -58,8 +62,20 @@ function New-GraphBulkRequest {
             }
 
         } catch {
-            $Message = ($_.ErrorDetails.Message | ConvertFrom-Json -ErrorAction SilentlyContinue).error.message
-            if ($null -eq $Message) { $Message = $($_.Exception.Message) }
+            # Try to parse ErrorDetails.Message as JSON
+            if ($_.ErrorDetails.Message) {
+                try {
+                    $ErrorJson = $_.ErrorDetails.Message | ConvertFrom-Json -ErrorAction Stop
+                    $Message = $ErrorJson.error.message
+                } catch {
+                    $Message = $_.ErrorDetails.Message
+                }
+            }
+
+            if ([string]::IsNullOrEmpty($Message)) {
+                $Message = $_.Exception.Message
+            }
+
             if ($Message -ne 'Request not applicable to target tenant.') {
                 $Tenant.LastGraphError = $Message ?? ''
                 $Tenant.GraphErrorCount++

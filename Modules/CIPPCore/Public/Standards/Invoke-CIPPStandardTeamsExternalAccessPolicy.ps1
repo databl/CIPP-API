@@ -13,6 +13,8 @@ function Invoke-CIPPStandardTeamsExternalAccessPolicy {
         CAT
             Teams Standards
         TAG
+        EXECUTIVETEXT
+            Defines the organization's policy for communicating with external users through Teams, including other organizations, Skype users, and unmanaged accounts. This fundamental setting determines the scope of external collaboration while maintaining security boundaries for business communications.
         ADDEDCOMPONENT
             {"type":"switch","name":"standards.TeamsExternalAccessPolicy.EnableFederationAccess","label":"Allow communication from trusted organizations"}
             {"type":"switch","name":"standards.TeamsExternalAccessPolicy.EnableTeamsConsumerAccess","label":"Allow communication with unmanaged Teams accounts"}
@@ -38,7 +40,15 @@ function Invoke-CIPPStandardTeamsExternalAccessPolicy {
         return $true
     } #we're done.
 
-    $CurrentState = New-TeamsRequest -TenantFilter $Tenant -Cmdlet 'Get-CsExternalAccessPolicy' -CmdParams @{Identity = 'Global' } | Select-Object *
+    try {
+        $CurrentState = New-TeamsRequest -TenantFilter $Tenant -Cmdlet 'Get-CsExternalAccessPolicy' -CmdParams @{Identity = 'Global' } |
+        Select-Object *
+    }
+    catch {
+        $ErrorMessage = Get-NormalizedError -Message $_.Exception.Message
+        Write-LogMessage -API 'Standards' -Tenant $Tenant -Message "Could not get the TeamsExternalAccessPolicy state for $Tenant. Error: $ErrorMessage" -Sev Error
+        return
+    }
 
     $EnableFederationAccess = $Settings.EnableFederationAccess ?? $false
     $EnableTeamsConsumerAccess = $Settings.EnableTeamsConsumerAccess ?? $false

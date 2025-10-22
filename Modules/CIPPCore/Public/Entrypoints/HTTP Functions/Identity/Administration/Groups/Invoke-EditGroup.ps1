@@ -10,7 +10,7 @@ function Invoke-EditGroup {
 
     $APIName = $Request.Params.CIPPEndpoint
     $Headers = $Request.Headers
-    Write-LogMessage -headers $Headers -API $APIName -message 'Accessed this API' -Sev 'Debug'
+
 
     $Results = [System.Collections.Generic.List[string]]@()
     $UserObj = $Request.Body
@@ -45,12 +45,15 @@ function Invoke-EditGroup {
                     target  = $GroupId
                 })
         } else {
+            # Use new securityEnabled value if provided, otherwise keep original
+            $SecurityEnabled = $null -ne $UserObj.securityEnabled ? $UserObj.securityEnabled : $OrgGroup.securityEnabled
+
             $PatchObj = @{
                 displayName     = $UserObj.displayName
                 description     = $UserObj.description
                 mailNickname    = $UserObj.mailNickname
                 mailEnabled     = $OrgGroup.mailEnabled
-                securityEnabled = $OrgGroup.securityEnabled
+                securityEnabled = $SecurityEnabled
             }
             Write-Host "body: $($PatchObj | ConvertTo-Json -Depth 10 -Compress)" -ForegroundColor Yellow
             if ($UserObj.membershipRules) { $PatchObj | Add-Member -MemberType NoteProperty -Name 'membershipRule' -Value $UserObj.membershipRules -Force }
@@ -58,6 +61,13 @@ function Invoke-EditGroup {
                 $null = New-GraphPOSTRequest -type PATCH -uri "https://graph.microsoft.com/beta/groups/$($GroupId)" -tenantid $UserObj.tenantFilter -body ($PatchObj | ConvertTo-Json -Depth 10 -Compress)
                 $Results.Add("Success - Edited group properties for $($GroupName) group. It might take some time to reflect the changes.")
                 Write-LogMessage -headers $Headers -API $APIName -tenant $UserObj.tenantFilter -message "Edited group properties for $($GroupName) group" -Sev 'Info'
+
+                # Log securityEnabled changes specifically
+                if ($null -ne $UserObj.securityEnabled -and $UserObj.securityEnabled -ne $OrgGroup.securityEnabled) {
+                    $securityStatusText = "Security capabilities $($UserObj.securityEnabled ? 'enabled' : 'disabled') for group $($GroupName)"
+                    Write-LogMessage -headers $Headers -API $APIName -tenant $UserObj.tenantFilter -message $securityStatusText -Sev 'Info'
+                    $Results.Add($securityStatusText)
+                }
             } catch {
                 $Results.Add("Error - Failed to edit group properties: $($_.Exception.Message)")
                 Write-LogMessage -headers $Headers -API $APIName -tenant $UserObj.tenantFilter -message "Failed to patch group: $($_.Exception.Message)" -Sev 'Error'
@@ -430,8 +440,7 @@ function Invoke-EditGroup {
     }
 
     $body = @{'Results' = @($Results) }
-    # Associate values to output bindings by calling 'Push-OutputBinding'.
-    Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
+    return ([HttpResponseContext]@{
             StatusCode = [HttpStatusCode]::OK
             Body       = $Body
         })

@@ -1,5 +1,3 @@
-using namespace System.Net
-
 function Invoke-ListScheduledItems {
     <#
     .FUNCTIONALITY
@@ -9,11 +7,6 @@ function Invoke-ListScheduledItems {
     #>
     [CmdletBinding()]
     param($Request, $TriggerMetadata)
-
-    $APIName = $Request.Params.CIPPEndpoint
-    $Headers = $Request.Headers
-    Write-LogMessage -headers $Headers -API $APIName -message 'Accessed this API' -Sev 'Debug'
-
     $ScheduledItemFilter = [System.Collections.Generic.List[string]]::new()
     $ScheduledItemFilter.Add("PartitionKey eq 'ScheduledTask'")
 
@@ -61,12 +54,18 @@ function Invoke-ListScheduledItems {
         $Tasks = $Tasks | Where-Object -Property Tenant -In $AllowedTenantDomains
     }
     $ScheduledTasks = foreach ($Task in $tasks) {
+        if (!$Task.Tenant -or !$Task.Command) {
+            continue
+        }
+
         if ($Task.Parameters) {
             $Task.Parameters = $Task.Parameters | ConvertFrom-Json -ErrorAction SilentlyContinue
         } else {
             $Task | Add-Member -NotePropertyName Parameters -NotePropertyValue @{}
         }
-        if ($Task.Recurrence -eq 0 -or [string]::IsNullOrEmpty($Task.Recurrence)) {
+        if (!$Task.Recurrence) {
+            $Task | Add-Member -NotePropertyName Recurrence -NotePropertyValue 'Once' -Force
+        } elseif ($Task.Recurrence -eq 0 -or [string]::IsNullOrEmpty($Task.Recurrence)) {
             $Task.Recurrence = 'Once'
         }
         try {
@@ -106,8 +105,7 @@ function Invoke-ListScheduledItems {
         $Task
     }
 
-    # Associate values to output bindings by calling 'Push-OutputBinding'.
-    Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
+    return ([HttpResponseContext]@{
             StatusCode = [HttpStatusCode]::OK
             Body       = @($ScheduledTasks | Sort-Object -Property ScheduledTime, ExecutedTime -Descending)
         })
