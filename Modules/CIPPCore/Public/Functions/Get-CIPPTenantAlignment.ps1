@@ -34,6 +34,7 @@ function Get-CIPPTenantAlignment {
             $JSON = $_.JSON
             try {
                 $RowKey = $_.RowKey
+                if ([string]::IsNullOrWhiteSpace($JSON)) { return }
                 $Data = $JSON | ConvertFrom-Json -Depth 100 -ErrorAction Stop
             } catch {
                 Write-Warning "$($RowKey) standard could not be loaded: $($_.Exception.Message)"
@@ -86,12 +87,15 @@ function Get-CIPPTenantAlignment {
                 }
             }
 
-            if (-not $tenantData.ContainsKey($Tenant)) {
+            if ($Tenant -and -not $tenantData.ContainsKey($Tenant)) {
                 $tenantData[$Tenant] = @{}
             }
             $tenantData[$Tenant][$FieldName] = @{
-                Value       = $FieldValue
-                LastRefresh = $Standard.TimeStamp.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+                Value            = $FieldValue
+                LastRefresh      = $Standard.TimeStamp.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+                LicenseAvailable = $Standard.LicenseAvailable
+                CurrentValue     = $Standard.CurrentValue
+                ExpectedValue    = $Standard.ExpectedValue
             }
         }
         $TenantStandards = $tenantData
@@ -131,7 +135,8 @@ function Get-CIPPTenantAlignment {
                 } elseif ($TenantValues.Count -gt 0) {
                     $TemplateAssignedTenants = @($TenantValues)
                 } else {
-                    $TemplateAssignedTenants = @()
+                    # Filter was specified but resolved to no tenants (empty group) - skip this template
+                    continue
                 }
             } else {
                 $AppliestoAllTenants = $true
@@ -174,7 +179,7 @@ function Get-CIPPTenantAlignment {
                                 $IntuneActions = if ($IntuneTemplate.action) { $IntuneTemplate.action } else { @() }
                                 $IntuneReportingEnabled = ($IntuneActions | Where-Object { $_.value -and ($_.value.ToLower() -eq 'report' -or $_.value.ToLower() -eq 'remediate') }).Count -gt 0
                                 $TagTemplate = $TagTemplates | Where-Object -Property package -EQ $Tag.value
-                                $TagTemplates | ForEach-Object {
+                                $TagTemplate | ForEach-Object {
                                     $TagStandardId = "standards.IntuneTemplate.$($_.GUID)"
                                     [PSCustomObject]@{
                                         StandardId       = $TagStandardId
@@ -241,7 +246,8 @@ function Get-CIPPTenantAlignment {
                     # Use HashSet for Contains
                     $IsReportingDisabled = $ReportingDisabledSet.Contains($StandardKey)
                     # Use cached tenant data
-                    $HasStandard = $CurrentTenantStandards.ContainsKey($StandardKey)
+
+                    $HasStandard = $StandardKey -and $CurrentTenantStandards.ContainsKey($StandardKey)
 
                     if ($HasStandard) {
                         $StandardObject = $CurrentTenantStandards[$StandardKey]
@@ -254,7 +260,7 @@ function Get-CIPPTenantAlignment {
                             }
                         }
 
-                        $IsCompliant = ($Value -eq $true)
+                        $IsCompliant = ($Value -eq $true) -or ($StandardObject.CurrentValue -and $StandardObject.CurrentValue -eq $StandardObject.ExpectedValue)
                         $IsLicenseMissing = ($Value -is [string] -and $Value -like 'License Missing:*')
 
                         $ComplianceStatus = if ($IsReportingDisabled) {
@@ -275,6 +281,9 @@ function Get-CIPPTenantAlignment {
                                 StandardValue     = $StandardValueJson
                                 ComplianceStatus  = $ComplianceStatus
                                 ReportingDisabled = $IsReportingDisabled
+                                LicenseAvailable  = $StandardObject.LicenseAvailable
+                                CurrentValue      = $StandardObject.CurrentValue
+                                ExpectedValue     = $StandardObject.ExpectedValue
                             })
                     } else {
                         $ComplianceStatus = if ($IsReportingDisabled) {
@@ -289,6 +298,9 @@ function Get-CIPPTenantAlignment {
                                 StandardValue     = 'NOT FOUND'
                                 ComplianceStatus  = $ComplianceStatus
                                 ReportingDisabled = $IsReportingDisabled
+                                LicenseAvailable  = $null
+                                CurrentValue      = $null
+                                ExpectedValue     = $null
                             })
                     }
                 }

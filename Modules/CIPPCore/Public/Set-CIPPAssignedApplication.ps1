@@ -9,10 +9,29 @@ function Set-CIPPAssignedApplication {
         $GroupIds,
         $AssignmentMode = 'replace',
         $APIName = 'Assign Application',
-        $Headers
+        $Headers,
+        $AssignmentFilterName,
+        $AssignmentFilterType = 'include'
     )
     Write-Host "GroupName: $GroupName Intent: $Intent AppType: $AppType ApplicationId: $ApplicationId TenantFilter: $TenantFilter APIName: $APIName"
     try {
+        # Resolve assignment filter name to ID if provided
+        $ResolvedFilterId = $null
+        if ($AssignmentFilterName) {
+            Write-Host "Looking up assignment filter by name: $AssignmentFilterName"
+            $AllFilters = New-GraphGetRequest -uri 'https://graph.microsoft.com/beta/deviceManagement/assignmentFilters' -tenantid $TenantFilter
+            $MatchingFilter = $AllFilters | Where-Object { $_.displayName -like $AssignmentFilterName } | Select-Object -First 1
+
+            if ($MatchingFilter) {
+                $ResolvedFilterId = $MatchingFilter.id
+                Write-Host "Found assignment filter: $($MatchingFilter.displayName) with ID: $ResolvedFilterId"
+            } else {
+                $ErrorMessage = "No assignment filter found matching the name: $AssignmentFilterName. Application assigned without filter."
+                Write-LogMessage -headers $Headers -API $APIName -message $ErrorMessage -sev 'Warn' -tenant $TenantFilter
+                Write-Host $ErrorMessage
+            }
+        }
+
         $assignmentSettings = $null
         if ($AppType) {
             $assignmentSettings = @{
@@ -88,11 +107,11 @@ function Set-CIPPAssignedApplication {
                     $resolvedGroupIds = $GroupIds
                 } else {
                     $GroupNames = $GroupName.Split(',')
-                    $resolvedGroupIds = New-GraphGetRequest -uri 'https://graph.microsoft.com/beta/groups' -tenantid $TenantFilter | ForEach-Object {
+                    $resolvedGroupIds = New-GraphGetRequest -uri 'https://graph.microsoft.com/beta/groups?$top=999&$select=id,displayName' -tenantid $TenantFilter | ForEach-Object {
                         $Group = $_
                         foreach ($SingleName in $GroupNames) {
-                            if ($_.displayName -like $SingleName) {
-                                $group.id
+                            if ($Group.displayName -like $SingleName) {
+                                $Group.id
                             }
                         }
                     }
@@ -115,6 +134,15 @@ function Set-CIPPAssignedApplication {
                         settings      = $assignmentSettings
                     }
                 }
+            }
+        }
+
+        # Add assignment filter to each assignment if specified
+        if ($ResolvedFilterId) {
+            Write-Host "Adding assignment filter $ResolvedFilterId with type $AssignmentFilterType to assignments"
+            foreach ($assignment in $MobileAppAssignment) {
+                $assignment.target.deviceAndAppManagementAssignmentFilterId = $ResolvedFilterId
+                $assignment.target.deviceAndAppManagementAssignmentFilterType = $AssignmentFilterType
             }
         }
 
@@ -177,7 +205,6 @@ function Set-CIPPAssignedApplication {
         }
         if ($PSCmdlet.ShouldProcess($GroupName, "Assigning Application $ApplicationId")) {
             Start-Sleep -Seconds 1
-            # Write-Information (ConvertTo-Json $DefaultAssignmentObject -Depth 10)
             $null = New-GraphPOSTRequest -uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($ApplicationId)/assign" -tenantid $TenantFilter -type POST -body ($DefaultAssignmentObject | ConvertTo-Json -Compress -Depth 10)
             Write-LogMessage -headers $Headers -API $APIName -message "Assigned Application $ApplicationId to $($GroupName)" -Sev 'Info' -tenant $TenantFilter
         }
